@@ -1,0 +1,77 @@
+AUTHOR: SymAlex (isaleksey@gmail.com)
+
+DESCRIPTION
+-----------
+Module written for lighttpd, by analogy with the module for apache mod_rpaf
+
+CONFIGURE
+---------
+
+[file: lighttpd.conf]
+server.port = 8081
+server.modules = ("mod_rpaf", ....)
+rpaf.enable = 1                       # 1-enable module, 0-disable module
+rpaf.proxy_ips = ( "127.0.0.1", ... ) # proxy server address
+rpaf.sethostname = 1                  # 1-enable set "Host:" using "X-Forwarded-Host" or "X-Host", 0-off
+rpaf.header = "X-Real-IP"             # "X-Forwarded-For" if commented
+[end of file: lighttpd.conf]
+
+[file: nginx.conf]
+http {
+     proxy_redirect off;
+     proxy_set_header Host $host;
+     proxy_set_header X-Real-IP $remote_addr;
+     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+     client_max_body_size 10m;
+     client_body_buffer_size 128k;
+     proxy_connect_timeout 90;
+     proxy_send_timeout 90;
+     proxy_read_timeout 90;
+     proxy_buffers 32 4k;
+}
+
+server { # simple reverse-proxy
+  listen 80;
+
+  server_name test.org;
+  access_log /var/log/nginx/lighttpd.access.log;
+
+  # pass requests for dynamic content to rails/turbogears/zope, et al
+  location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    #proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Host myhost;
+  }
+}
+[end of file: nginx.conf]
+
+
+INSTALL
+--------
+
+# in working dir
+wget http://download.lighttpd.net/lighttpd/releases-1.4.x/lighttpd-1.4.28.tar.gz
+tar zxf lighttpd-1.4.28.tar.gz
+
+# copy module
+cp mod_rpaf.c lighttpd-1.4.28/src
+
+# add following text to lighttpd-1.4.28/src/Makefile.am
+# --
+lib_LTLIBRARIES += mod_rpaf.la
+mod_rpaf_la_SOURCES = mod_rpaf.c
+mod_rpaf_la_LDFLAGS = -module -export-dynamic -avoid-version -no-undefined
+mod_rpaf_la_LIBADD = $(common_libadd)
+# --
+
+cd lighttpd-1.4.28
+
+./configure
+make
+make install
+
+# restart services
+service nginx restart
+service lighttpd restart
